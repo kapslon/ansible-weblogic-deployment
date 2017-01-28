@@ -1,0 +1,38 @@
+- name: copy extend domain python script for ESS
+  template: src=extend-domain.py dest={{ software_location }} 
+  when: inventory_hostname == ansible_play_hosts[0]
+
+- name: Execute extend domain script for ESS
+  shell: "{{ oracle_home }}/oracle_common/common/bin/wlst.sh {{ software_location }}/extend-domain.py"
+  register: out
+  when: ( inventory_hostname == ansible_play_hosts[0] )
+
+- name: copy covert datasources script
+  template: src=convert_ds_to_AGL.py dest={{ software_location }}
+  when: inventory_hostname == ansible_play_hosts[0]
+  tags: conevrtToAGL
+
+- name: Convert Datasources to Active GridLink
+  shell: "{{ oracle_home }}/oracle_common/common/bin/wlst.sh {{ software_location }}/convert_ds_to_AGL.py"
+  register: out
+  when: ( inventory_hostname == ansible_play_hosts[0] )
+  tags: conevrtToAGL
+
+- name: Remove old template
+  file:
+    state: absent
+    path: "{{ shared_config_dir }}/soadomaintemplate.jar"
+  when: ( inventory_hostname == ansible_play_hosts[0] )
+
+- name: Pack domain for distribution of new ESS
+  shell: "{{ oracle_common_home }}/common/bin/pack.sh -managed=true -domain={{ aserver_home }} -template={{ shared_config_dir }}/soadomaintemplate.jar -template_name=soa_{{ domain_name }}_template"
+  when: inventory_hostname in ansible_play_hosts[0]
+
+- name: Unpack domain on all hosts with ESS
+  shell: "{{ oracle_common_home }}/common/bin/unpack.sh -domain={{ mserver_home }} -overwrite_domain=true -template={{ shared_config_dir }}/soadomaintemplate.jar -log_priority=DEBUG -log=/tmp/unpack.log -app_dir={{ application_home }}"
+
+- name: Add to ESS start scripts
+  lineinfile: dest="{{ wlscripts }}/config/midctl_{{ansible_hostname}}.cfg" backrefs=True state=present regexp='^hostedComponents=(.*)' line='hostedComponents=\\1,WebLogic-{{ domain_name }}-ESS_Server{{ play_hosts.index(inventory_hostname) +1 }}'
+
+- name: Add to ESS start scripts
+  lineinfile: dest="{{ wlscripts }}/config/midctl_{{ansible_hostname}}.cfg" state=present insertafter='EOF' line='WebLogic-{{ domain_name }}-ESS_Server{{ play_hosts.index(inventory_hostname) +1 }}-serverName=ESS_Server{{ play_hosts.index(inventory_hostname) +1 }}'

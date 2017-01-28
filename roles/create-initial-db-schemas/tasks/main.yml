@@ -1,0 +1,21 @@
+- name: Copy response file
+  template: src=rcu-initial.rsp dest={{ software_location }}/
+  when: inventory_hostname in groups['weblogic_cluster1'][0]
+  tags: rcu
+
+- name: Copy passwords file
+  template: src=rcu.passwd.txt dest={{ software_location }}/
+  when: inventory_hostname in groups['weblogic_cluster1'][0]
+  tags: rcu
+
+- name: Copy script that creates the schemas in database repository
+  template: src=create_repo.sh dest={{ software_location }}/ mode=755
+  when: inventory_hostname in groups['weblogic_cluster1'][0]
+  tags: rcu
+
+- name: Execute script for generate schemas on database
+  shell: '{{ software_location }}/create_repo.sh'
+  ignore_errors: yes
+  when: inventory_hostname in groups['weblogic_cluster1'][0]
+  tags: rcu
+

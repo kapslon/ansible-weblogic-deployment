@@ -1,0 +1,20 @@
+- name: Check if installation is already done
+  stat: path={{ oracle_common_home }}
+  register: mw_folder_exists
+
+- name: Copy Middleware Installer
+  copy: src={{ package_location }}/{{ mw_installer }} dest={{ software_location }}
+  when: mw_folder_exists.stat.exists == False
+
+- name: Copy file for silent installation
+  template: src=silent-weblogic.txt dest={{ software_location }}
+  when: mw_folder_exists.stat.exists == False
+
+- name: Copy OraInst.loc
+  template: src=oraInst.loc dest={{ software_location }}
+  when: mw_folder_exists.stat.exists == False
+
+- name: execute Weblogic installer
+  command: "{{ java_home }}/bin/java -Xms1024m -Xmx1024m -jar {{ software_location }}/{{ mw_installer }} -silent -responseFile {{ software_location }}/silent-weblogic.txt -invPtrLoc {{ software_location }}/oraInst.loc"
+  when: mw_folder_exists.stat.exists == False
+

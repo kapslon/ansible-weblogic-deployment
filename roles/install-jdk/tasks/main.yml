@@ -1,0 +1,19 @@
+# ==> Install JDK
+#
+- name: Check if Java already is installed
+  stat: path='{{ java_home }}/bin/java'
+  register: java_exists
+
+- name: Unarchive java
+  unarchive: src="{{ package_location }}/{{ jdk_installation_archive }}"   dest="{{ products_dir }}" owner={{ oracle_users[0].username }} group={{ oracle_users[0].primgroup }}
+  when: java_exists.stat.exists == False
+
+- name: Move Java to destination folder
+  command: mv {{ products_dir }}/{{ jdk_archive_folder }}  {{ java_home }}
+  when: java_exists.stat.exists == False
+
+- name: Add JAVA_HOME environment variariables in bashrc
+  lineinfile: dest='/home/{{ oracle_users[0].username }}/.bashrc' line='export JAVA_HOME={{ java_home }}'
+
+- name: Add Java bin folder to path in bashrc
+  lineinfile: dest='/home/{{ oracle_users[0].username }}/.bashrc' line='export PATH=$PATH:$JAVA_HOME/bin'

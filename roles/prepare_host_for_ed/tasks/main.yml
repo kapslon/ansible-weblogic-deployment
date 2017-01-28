@@ -1,0 +1,127 @@
+- name: Install required libraries
+  yum: name={{ item }} state=present
+  with_items: '{{ packages_list }}'
+
+- name: Disable SELinux
+  selinux: state=disabled
+
+- name: Set timezone to Berlin
+  file: src=/usr/share/zoneinfo/Europe/Berlin  dest=/etc/localtime state=link force=yes
+
+- name: User | Add group(s)
+  group: name={{ item.group }} gid={{ item.gid }} state=present
+  with_items: '{{ oracle_groups }} '
+  tags:
+   - group
+
+- name: User | Add Oracle user
+  #user: name={{ item.username }}  group={{ item.primgroup }} groups={{ item.othergroups }} uid={{ item.uid }} generate_ssh_key=yes append=yes state=present password={{ item.passwd }}
+  user: name={{ item.username }}  group={{ item.primgroup }} uid={{ item.uid }} groups={{ item.othergroups }} generate_ssh_key=yes append=yes state=present password={{ item.passwd }}
+  with_items: '{{ oracle_users }}'
+  tags:
+   - user
+
+- name: Add oracle user limits
+  lineinfile: dest=/etc/security/limits.conf line='{{ oracle_users[0].username }} {{ item.limit }} {{ item.type}} {{ item.value }}'
+  with_items:
+    - { limit: 'soft', type: nofile, value: '{{ soft_no_file }}' }
+    - { limit: 'hard', type: nofile, value: '{{ hard_no_file }}' }
+    - { limit: 'soft', type: nproc, value: '{{ soft_nproc }}' }
+    - { limit: 'hard', type: nproc, value: '{{ hard_nproc }}' }
+ 
+- name: Create a shell profile with file and process limits for oracle user
+  template: src=oracle-limits.sh dest=/etc/profile.d/
+
+- name: Clear iptables firewall
+  command: /sbin/iptables -F
+
+- name: AdminServerFirewallRule
+  command: /sbin/iptables -I INPUT 1 -p tcp --dport '{{ admin_server_port }}' -j ACCEPT -m comment --comment "Weblogic Admin Server"
+
+- name: WSMServerFirewallRule
+  command: /sbin/iptables -I INPUT 1 -p tcp --dport '{{ wsm_server_port }}' -j ACCEPT -m comment --comment "Weblogic WSM Server"
+
+- name: OSBServerFirewallRule
+  command: /sbin/iptables -I INPUT 1 -p tcp --dport '{{ osb_server_port }}' -j ACCEPT -m comment --comment "Weblogic WSM Server"
+
+- name: SOAServerFirewallRule
+  command: /sbin/iptables -I INPUT 1 -p tcp --dport '{{ soa_server_port }}' -j ACCEPT -m comment --comment "Weblogic WSM Server"
+
+- name: NFSFirewallRule
+  command: /sbin/iptables -I INPUT 1 -p tcp --dport '{{ nodemanager_port }}' -j ACCEPT -m comment --comment "Node Manager"
+
+- name: NFSFirewallRule
+  command: /sbin/iptables -I INPUT 1 -p tcp --dport 111 -j ACCEPT -m comment --comment "NFS"
+
+- name: NFSFirewallRulei2
+  command: /sbin/iptables -I INPUT 1 -p tcp --dport 2049 -j ACCEPT -m comment --comment "NFS"
+
+- name: NFSFirewallRulei2
+  command: /sbin/iptables -I INPUT 1 -p tcp --dport 1521 -j ACCEPT -m comment --comment "DB"
+
+- name: FirewallRule1
+  command: /sbin/iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+- name: FirewallRule2
+  command: /sbin/iptables -A INPUT -p icmp -j ACCEPT
+
+- name: FirewallRule3
+  command: /sbin/iptables -A INPUT -i lo -j ACCEPT
+
+- name: FirewallRule4
+  command: /sbin/iptables -A INPUT -m state --state NEW -m tcp -p tcp --dport 22 -j ACCEPT
+
+- name: FirewallRule5
+  command: /sbin/iptables -A INPUT -j REJECT --reject-with icmp-host-prohibited
+
+- name: FirewallRule6
+  command: /sbin/iptables -A FORWARD -j REJECT --reject-with icmp-host-prohibited
+
+- name: Save Firewall
+  command: /sbin/iptables-save
+
+- name: Create Oracle Base
+  file: state=directory path={{ oracle_base }} owner={{ oracle_users[0].username }} group={{ oracle_users[0].primgroup }}
+
+- name: Create Oracle Shared config dir
+  file: state=directory path={{ shared_config_dir }} owner={{ oracle_users[0].username }} group={{ oracle_users[0].primgroup }}
+
+- name: Create Runtime Dir
+  file: state=directory path={{ runtime_dir }} owner={{ oracle_users[0].username }} group={{ oracle_users[0].primgroup }}
+
+- name: Attach shared volume 1
+  mount: name={{ shared_config_dir }} src={{ nfs_volume1 }} fstype=nfs opts=rw,bg,hard,nointr,tcp,vers=4,timeo=300,rsize=32768,wsize=32768,noatime state=mounted
+
+- name: Attach shared volume 2
+  mount: name={{ runtime_dir }} src={{ nfs_volume2 }} fstype=nfs opts=rw,bg,hard,nointr,tcp,vers=4,timeo=300,rsize=32768,wsize=32768,noatime state=mounted
+
+- name: Create Products Dir
+  file: state=directory path={{ products_dir }} owner={{ oracle_users[0].username }} group={{ oracle_users[0].primgroup }}
+
+- name: Create Domains location
+  file: state=directory path={{ domains_location }} owner={{ oracle_users[0].username }} group={{ oracle_users[0].primgroup }}
+
+- name: Create Applications location
+  file: state=directory path={{ applications_location }} owner={{ oracle_users[0].username }} group={{ oracle_users[0].primgroup }}
+
+- name: Create Local Oracle Home
+  file: state=directory path={{ local_oracle_base }} owner={{ oracle_users[0].username }} group={{ oracle_users[0].primgroup }}
+
+- name: Create Folder for installation files
+  file: state=directory path={{ software_location }} owner={{ oracle_users[0].username }} group={{ oracle_users[0].primgroup }}
+
+- name: Create Folder for weblogic control scripts
+  file: state=directory path={{ wlscripts }} owner={{ oracle_users[0].username }} group={{ oracle_users[0].primgroup }}
+
+
+- name: Create Folder for weblogic control scripts configs
+  file: state=directory path='{{ wlscripts }}/config' owner={{ oracle_users[0].username }} group={{ oracle_users[0].primgroup }}
+
+- name: Create Folder for weblogic control scripts secure
+  file: state=directory path='{{ wlscripts }}/secure' owner={{ oracle_users[0].username }} group={{ oracle_users[0].primgroup }}
+
+- name: Create Folder for weblogic control scripts log
+  file: state=directory path='{{ wlscripts }}/log' owner={{ oracle_users[0].username }} group={{ oracle_users[0].primgroup }}
+
+- name: Create Folder for weblogic filestores
+  file: state=directory path='{{ jms_store_location }} ' owner={{ oracle_users[0].username }} group={{ oracle_users[0].primgroup }}

@@ -1,0 +1,2 @@
+inventory_loc={{ oracle_base }}
+inst_group={{ oracle_users[0].primgroup }}

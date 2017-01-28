@@ -1,0 +1,83 @@
+- name: Copy soa installer files
+  copy: src={{package_location}}/{{ soa_installer }} dest={{ software_location }}/
+  tags:
+    - install-soa
+
+- name: Copy soa installer response file
+  template: src=soa.installer.rsp dest={{ software_location }}/
+  tags:
+    - install-soa
+
+- name: Check if Soa Suite is already intalled
+  stat: path='{{ oracle_home }}/soa/common/templates/wls/oracle.soa_template.jar'
+  register: soa_installation_exists
+
+- name: Run soa software installer
+  command: "{{ java_home }}/bin/java -Xms1024m -Xmx1024m -jar {{ software_location }}/{{ soa_installer }} -silent -responseFile {{ software_location }}/soa.installer.rsp -invPtrLoc {{ software_location }}/oraInst.loc"
+  when: soa_installation_exists.stat.exists == False
+  tags:
+    - install-soa
+
+- name: Copy response file
+  template: src=rcu.soa.rsp dest={{ software_location }}/
+  when: inventory_hostname in ansible_play_hosts[0]
+  tags:
+    - rcu
+
+- name: Copy passwords file
+  template: src=rcu.passwd.txt dest={{ software_location }}/
+  when: inventory_hostname in ansible_play_hosts[0]
+  tags:
+    - rcu
+
+- name: Copy script that creates the schemas in database repository
+  template: src=create_repo.sh dest={{ software_location }}/ mode=755
+  when: inventory_hostname in ansible_play_hosts[0]
+  tags:
+    - rcu
+
+- name: Execute script for generate schemas on database
+  shell: '{{ software_location }}/create_repo.sh'
+  ignore_errors: yes
+  when: inventory_hostname in ansible_play_hosts[0]
+  tags:
+    - rcu
+
+- name: copy extend domain python script
+  template: src=extend-domain.py dest={{ software_location }} 
+  when: inventory_hostname == ansible_play_hosts[0]
+
+- name: Execute extend domain script
+  shell: "{{ oracle_home }}/oracle_common/common/bin/wlst.sh {{ software_location }}/extend-domain.py"
+  register: out
+  when: ( inventory_hostname == ansible_play_hosts[0] )
+
+- name: copy covert datasources script
+  template: src=convert_ds_to_AGL.py dest={{ software_location }}
+  when: inventory_hostname == ansible_play_hosts[0]
+  tags: conevrtToAGL
+
+- name: Convert Datasources to Active GridLink
+  shell: "{{ oracle_home }}/oracle_common/common/bin/wlst.sh {{ software_location }}/convert_ds_to_AGL.py"
+  register: out
+  when: ( inventory_hostname == ansible_play_hosts[0] )
+  tags: conevrtToAGL
+
+- name: Remove old template
+  file:
+    state: absent
+    path: "{{ shared_config_dir }}/soadomaintemplate.jar"
+  when: ( inventory_hostname == ansible_play_hosts[0] )
+
+- name: Pack domain for distribution
+  shell: "{{ oracle_common_home }}/common/bin/pack.sh -managed=true -domain={{ aserver_home }} -template={{ shared_config_dir }}/soadomaintemplate.jar -template_name=soa_{{ domain_name }}_template"
+  when: inventory_hostname in ansible_play_hosts[0]
+
+- name: Unpack domain on all hosts
+  shell: "{{ oracle_common_home }}/common/bin/unpack.sh -domain={{ mserver_home }} -overwrite_domain=true -template={{ shared_config_dir }}/soadomaintemplate.jar -log_priority=DEBUG -log=/tmp/unpack.log -app_dir={{ application_home }}"
+
+- name: Add to start scripts
+  lineinfile: dest="{{ wlscripts }}/config/midctl_{{ansible_hostname}}.cfg" backrefs=True state=present regexp='^hostedComponents=(.*)' line='hostedComponents=\\1,WebLogic-{{ domain_name }}-SOA_Server{{ play_hosts.index(inventory_hostname) +1 }}'
+
+- name: Add to start scripts
+  lineinfile: dest="{{ wlscripts }}/config/midctl_{{ansible_hostname}}.cfg" state=present insertafter='EOF' line='WebLogic-{{ domain_name }}-SOA_Server{{ play_hosts.index(inventory_hostname) +1 }}-serverName=SOA_Server{{ play_hosts.index(inventory_hostname) +1 }}'

@@ -1,0 +1,37 @@
+hostgroup: weblogic_cluster1
+role_separation: true
+
+nfs_volume1: testhost1:/mnt/vol1
+nfs_volume2: testhost1:/mnt/vol2
+
+domain_name: testdomain
+
+package_location: /opt
+
+jdk_installation_archive: 'jdk-8u111-linux-x64.tar.gz'
+jdk_archive_folder: jdk1.8.0_111
+mw_installer: 'fmw_12.2.1.2.0_infrastructure.jar'
+soa_installer: 'fmw_12.2.1.2.0_soa.jar'
+osb_installer: 'fmw_12.2.1.2.0_osb.jar'
+ohs_installer: 'fmw_12.2.1.2.0_ohs_linux64.bin'
+ohs_oracle_home: '/u01/oracle/products/ohs'
+ohs_domain_home: '/u02/oracle/config/domains/ohs'
+nodemanager_ohs_port: 5557
+
+dbserver_name: 'testhost1'
+dbserver_port: '1521'
+dbserver_service: 'orcl'
+repository_prefix: 'WLS11'
+
+domain_name: test1domain
+
+db_profile_type: 'SMALL'
+
+admin_server_port: 7001
+owsm_server_port: 7010
+soa_server_port: 8001
+osb_server_port: 8011
+bam_server_port: 9001
+
+admihost_dns_entry: 'adminhost'
+soahost_dns_entry: 'adminhost'

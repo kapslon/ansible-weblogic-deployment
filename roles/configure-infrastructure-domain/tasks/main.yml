@@ -1,0 +1,118 @@
+- name: check if domain folder exists
+  stat: path={{ aserver_home }}/config
+  register: domain_exists
+
+- name: copy create domain python script
+  template: src=create-domain.py dest={{ software_location }} 
+  when: inventory_hostname == ansible_play_hosts[0]
+
+- name: Execute create domain script
+  shell: "{{ oracle_home }}/oracle_common/common/bin/wlst.sh {{ software_location }}/create-domain.py"
+  register: out
+  when: ( domain_exists.stat.exists == False ) and
+        ( inventory_hostname == ansible_play_hosts[0] )
+
+- name: copy covert datasources script
+  template: src=convert_ds_to_AGL.py dest={{ software_location }} 
+  when: inventory_hostname == ansible_play_hosts[0]
+  tags: conevrtToAGL
+
+- name: Convert Datasources to Active GridLink
+  shell: "{{ oracle_home }}/oracle_common/common/bin/wlst.sh {{ software_location }}/convert_ds_to_AGL.py"
+  register: out
+  when: ( domain_exists.stat.exists == False ) and
+        ( inventory_hostname == ansible_play_hosts[0] )
+  tags: conevrtToAGL
+
+- name: Pack domain for distribution
+  shell: "{{ oracle_common_home }}/common/bin/pack.sh -managed=true -domain={{ aserver_home }} -template={{ shared_config_dir }}/soadomaintemplate.jar -template_name=soa_{{ domain_name }}_template"
+  when: inventory_hostname in ansible_play_hosts[0]
+
+- name: Unpack domain on all hosts
+  shell: "{{ oracle_common_home }}/common/bin/unpack.sh -domain={{ mserver_home }} -overwrite_domain=true -template={{ shared_config_dir }}/soadomaintemplate.jar -log_priority=DEBUG -log=/tmp/unpack.log -app_dir={{ application_home }}"
+
+- name: Create NodeManager home
+  file: state=directory path={{ nm_home }} owner={{ oracle_users[0].username }} group={{ oracle_users[0].primgroup }}
+
+- name: Create NodeManager home security
+  file: state=directory path={{ nm_home }}/security owner={{ oracle_users[0].username }} group={{ oracle_users[0].primgroup }}
+
+- name: Create Nodemanager Properties
+  template: src=nodemanager.properties dest={{ nm_home }}
+
+- name: Copy node manager startup script
+  command: cp {{ wl_home }}/server/bin/startNodeManager.sh {{ nm_home }}
+
+- name: Copy node manager startup script
+  command: cp {{ wl_home }}/server/bin/stopNodeManager.sh {{ nm_home }}
+
+- name: Add nm home to startup script
+  lineinfile: dest='{{ nm_home }}/startNodeManager.sh' insertbefore=BOF line='NODEMGR_HOME={{ nm_home }}'
+
+- name: Add nm home to stop script
+  lineinfile: dest='{{ nm_home }}/stopNodeManager.sh' insertbefore=BOF line='NODEMGR_HOME={{ nm_home }}'
+
+- name: Create Nodemanager Domains
+  template: src=nodemanager.domains dest={{ nm_home }}
+  when: inventory_hostname != ansible_play_hosts[0]
+
+- name: Create Nodemanager Domains
+  template: src=nodemanager.domains1 dest={{ nm_home }}/nodemanager.domains
+  when: inventory_hostname == ansible_play_hosts[0]
+
+- name: check if derby databes exists
+  stat: path={{ oracle_home }}/wlserver/common/derby/lib/derby.jar
+  register: derby_exists
+
+
+- name: Disable derby database
+  shell: 'mv {{ oracle_home }}/wlserver/common/derby/lib/derby.jar {{ oracle_home }}/wlserver/common/derby/lib/disable_derby.jar'
+  when: ( derby_exists.stat.exists == True )
+
+- name: Copy Identity store fro NM
+  shell: 'cp {{ aserver_home }}/security/DemoIdentity.jks {{ nm_home }}/security'
+
+- name: Start Node Manager
+  shell: 'nohup {{ nm_home }}/startNodeManager.sh  > /dev/null 2>&1 &'
+
+- name: Waiting for nodemanager to come up
+  wait_for:  port={{ nodemanager_port }}  delay=2 host={{ inventory_hostname }} timeout=700
+
+- name: Copy Nodemager Enroll script
+  template: src=Enroll.py dest={{ software_location }}/ 
+  when: inventory_hostname == ansible_play_hosts[0]
+
+- name: Start Admin server for enroll
+  shell: 'nohup {{ aserver_home }}/bin/startWebLogic.sh > /dev/null 2>&1 &'
+  when: inventory_hostname == ansible_play_hosts[0]
+
+- name: Waiting for AdminServer to come up
+  wait_for: port={{ admin_server_port }} host={{ inventory_hostname }} delay=2 timeout=900
+  when: inventory_hostname in ansible_play_hosts[0]
+
+- name: Enroll nodemanger
+  shell: "{{ oracle_home }}/oracle_common/common/bin/wlst.sh {{ software_location }}/Enroll.py"
+  when: inventory_hostname in ansible_play_hosts[0]
+
+- name: Kill Admin server
+  shell: "kill -9 `ps -ef | grep 'Name=AdminServer' | grep -v grep | awk '{print $2}' | head -1`"
+  when: inventory_hostname in ansible_play_hosts[0]
+
+
+- name: midctl startup script
+  copy: src="{{ role_path }}/files/midctl.sh" dest={{ wlscripts }} mode=0755
+
+- name: weblogic control script
+  template: src="{{ role_path }}/files/control_weblogic.py" dest={{ wlscripts }}
+
+- name: weblogic control configuration
+  template: src=midctl_hosts.cfg dest="{{ wlscripts }}/config/midctl_{{ansible_hostname}}.cfg"
+
+- name: create script for generation of userKeyFile and userConfigFile
+  template: src=create_secure_files.py dest={{ software_location }}
+
+- name: Execute create script for generation of userKeyFile and userConfigFile
+  shell: "{{ oracle_home }}/oracle_common/common/bin/wlst.sh {{ software_location }}/create_secure_files.py"
+
+- name: Kill node manager
+  shell: "killall java"

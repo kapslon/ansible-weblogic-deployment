@@ -1,0 +1,32 @@
+- name: Prepare host for Enterprise Deployment
+  hosts: weblogic_cluster1
+  vars_files:
+        - passwords-vault.yml
+  user: root
+  roles:
+        - role: prepare_host_for_ed
+        - role: install-jdk
+          become: true
+          become_user: '{{ oracle_users[0].username }}' 
+        - role: install-infrastrucuture
+          become: true
+          become_user: '{{ oracle_users[0].username }}' 
+        - role: create-initial-db-schemas
+          become: true
+          become_user: '{{ oracle_users[0].username }}'
+        - role: configure-infrastructure-domain
+          become: true
+          become_user: '{{ oracle_users[0].username }}'
+        - role: configure-webtier
+          become: true
+          become_user: '{{ oracle_users[0].username }}'
+        - role: extend-domain-with-soa
+          become: true
+          become_user: '{{ oracle_users[0].username }}'
+        - role: extend-domain-with-osb
+          become: true
+          become_user: '{{ oracle_users[0].username }}'
+        - role: extend-domain-with-ess
+          become: true
+          become_user: '{{ oracle_users[0].username }}'
+

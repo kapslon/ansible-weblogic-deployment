@@ -1,0 +1,51 @@
+- name: Create Folder for OHS home
+  file: state=directory path={{ ohs_oracle_home }}  owner={{ oracle_users[0].username }} group={{ oracle_users[0].primgroup }}
+
+- name: Copy OHS installer
+  copy: src={{package_location}}/{{ ohs_installer }} dest={{ software_location }}/ mode=0755
+  tags:
+    - install-ohs
+
+- name: Copy OHS installer response file
+  template: src=ohsresponse dest={{ software_location }}/
+  tags:
+    - install-ohs
+
+- name: Check if OHS is already intalled
+  stat: path='{{ ohs_oracle_home }}/bin'
+  register: ohs_installation_exists
+
+- name: Run OHS software installer
+  command: "{{ software_location }}/{{ ohs_installer }} -silent -responseFile {{ software_location }}/ohsresponse"
+  when: ohs_installation_exists.stat.exists == False
+  tags:
+    - install-ohs
+
+- name: check if OHS domain folder exists
+  stat: path={{ ohs_domain_home }}/config
+  register: ohs_domain_exists
+
+- name: copy create domain python script
+  template: src=create_domain.py dest={{ software_location }} 
+
+- name: Execute create OHS domain script
+  shell: "{{ ohs_oracle_home }}/oracle_common/common/bin/wlst.sh {{ software_location }}/create_domain.py"
+  register: out
+  when: ( ohs_domain_exists.stat.exists == False )
+
+- name: Add to OHS start scripts
+  lineinfile: dest="{{ wlscripts }}/config/midctl_{{ansible_hostname}}.cfg" backrefs=True state=present regexp='^hostedComponents=(.*)' line='hostedComponents=\\1,NodeManager-ohs-ohs1,OHS-ohs-ohs1'
+
+- name: Create file with ohs startup config
+  template: src=midctl_hosts.cfg dest={{ software_location }}/
+  tags:
+    - install-ohs
+
+- name: Add to OHS start scripts
+  shell: "cat {{ software_location }}/midctl_hosts.cfg >> {{ wlscripts }}/config/midctl_{{ansible_hostname}}.cfg"
+
+- name: Create adminhost virtualhost
+  template: src=admin_vh.conf dest={{ ohs_domain_home }}/config/fmwconfig/components/OHS/ohs1/moduleconf
+
+- name: Creat soahost virtualhost
+  template: src=soainternal_vh.conf dest={{ ohs_domain_home }}/config/fmwconfig/components/OHS/ohs1/moduleconf
